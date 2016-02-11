@@ -29,8 +29,6 @@ var titles = {
 
 }
 
-
-
 var baseSettings = {
   eventCollection: "measurements",
   timezone: "UTC"
@@ -40,13 +38,66 @@ var chartsObjects = {}
 
 Keen.ready(function(){
   _.each(charts, function(params, id){
-    chartsObjects[id] = new Keen.Query("average", _.extend(baseSettings, params));
-    var chart = client.draw(chartsObjects[id], document.getElementById(id), {
-      // Custom configuration here
+    chartsObjects[id] = new Keen.Dataviz();
 
+    chartsObjects[id]
+      .el(document.getElementById(id))
+      .height(300)
+      .colors(["green", "orange", "red"])
+      .sortGroups("desc")
+      .prepare();
+
+    var query = new Keen.Query("average", _.extend(baseSettings, params));
+
+    var req = client.run(query, function(err, res){
+      if (err) {
+        chartsObjects[id].error(err.message);
+      }
+
+      else {
+        if ( _.contains(["chart-co2-2d", "chart-co2-6h"], id) ) {
+
+          var test = function(list, idx, threshold) {
+            if (idx < list.length && _.isNumber(list[idx]["value"]) && list[idx]["value"] > threshold) {
+              return true;
+            }
+            else {
+              return false;
+            }
+          }
+
+          var data = _.map(res.result, function(item, idx) {
+            return({
+              timeframe: item["timeframe"],
+              value: [
+                  { category: "Good", result: item["value"] },
+                  { category: "Warn", result: (test(res.result, idx, 800) || test(res.result, idx + 1, 800) ? item["value"] : 0) },
+                  { category: "Crit", result: (test(res.result, idx, 1100)|| test(res.result, idx + 1, 1100) ? item["value"] : 0) }
+              ]
+            })
+          });
+
+          chartsObjects[id]
+            .parseRawData({ result: data })
+            .title(titles[id])
+            .height(300)
+            .render();
+        }
+
+        else {
+          chartsObjects[id]
+            .parseRequest(this)
+            .title(titles[id])
+            .height(300)
+            .render();
+        }
+      }
     });
-    // setInterval(function() { req.refresh(); }, 1000 * 60 * 15);
 
-    chart.attributes({ title: titles[id], height: 300 });
+    setInterval(function() {
+      // chartsObjects[id].prepare(); // will show spinner
+      req.refresh();
+    }, 1000 * 30);
+
   });
 });
